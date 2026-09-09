@@ -1,0 +1,76 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual Environment ──
+venv/
+env/
+.venv/
+ENV/
+
+# ── Testing & Coverage ──
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+
+# ── YOLO & Machine Learning Artifacts ──
+runs/
+wandb/
+*.pt
+*.onnx
+*.engine
+*.tflite
+models/*.joblib
+models/*.pkl
+models/*.pt
+models/*.onnx
+models/*.json
+
+# ── Data Directories (keep structure via .gitkeep) ──
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/tabular/*
+!data/tabular/.gitkeep
+data/vision/*
+!data/vision/.gitkeep
+data/labels/*
+!data/labels/.gitkeep
+
+# ── Logs & Reports ──
+logs/*.log
+logs/*
+!logs/.gitkeep
+reports/*.html
+reports/*.json
+reports/*.png
+
+# ── Environment & Secrets ──
+.env
+.env.*
+!.env.example
+
+# ── IDE & Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── OS Generated Files ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Jupyter ──
+.ipynb_checkpoints/
+

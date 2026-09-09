@@ -1,0 +1,175 @@
+# ============================================================
+# ExoScope / HBLI — Default Configuration
+# ============================================================
+# All tunable parameters in one place. Override with a local
+# config file or environment variables.
+
+project:
+  name: "ExoScope"
+  version: "0.1.0"
+  description: "Habitability & Biosignature-Likelihood Index"
+
+# --- Data Paths ---
+paths:
+  data_root: "data"
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  tabular_data: "data/tabular"
+  labels: "data/labels"
+  models: "models"
+  reports: "reports"
+
+# --- Data Ingestion ---
+data_ingestion:
+  exoplanet_archive:
+    table_name: "pscomppars"  # Planetary Systems Composite Parameters
+    columns:
+      - "pl_name"        # Planet name
+      - "hostname"       # Host star name
+      - "pl_rade"        # Planet radius (Earth radii)
+      - "pl_bmasse"      # Planet mass (Earth masses)
+      - "pl_dens"        # Planet density (g/cm³)
+      - "pl_orbeccen"    # Orbital eccentricity
+      - "pl_orbsmax"     # Orbital semi-major axis (AU)
+      - "pl_orbper"      # Orbital period (days)
+      - "pl_insol"       # Insolation flux (Earth flux)
+      - "pl_eqt"         # Equilibrium temperature (K)
+      - "st_teff"        # Stellar effective temperature (K)
+      - "st_lum"         # Stellar luminosity (log solar)
+      - "st_mass"        # Stellar mass (solar masses)
+      - "st_rad"         # Stellar radius (solar radii)
+      - "st_age"         # Stellar age (Gyr)
+      - "disc_facility"  # Discovery facility
+    cache_file: "data/tabular/exoplanets.csv"
+    max_rows: null  # null = fetch all
+
+  pds:
+    base_url: "https://pds-imaging.jpl.nasa.gov"
+    missions:
+      - "Mars Reconnaissance Orbiter"
+      - "Mars Science Laboratory"
+      - "Mars 2020"
+    instruments:
+      - "HiRISE"
+      - "Mastcam"
+      - "Mastcam-Z"
+    download_dir: "data/raw/pds"
+    rate_limit_seconds: 1.0
+
+  bhoonidhi:
+    download_dir: "data/raw/bhoonidhi"
+    # Mars-analog target regions (arid/salt-flat sites)
+    target_regions:
+      - name: "Rann of Kutch"
+        bbox: [68.0, 22.5, 72.0, 24.5]
+      - name: "Thar Desert"
+        bbox: [69.0, 24.0, 72.0, 28.0]
+      - name: "Ladakh Cold Desert"
+        bbox: [76.0, 32.0, 80.0, 36.0]
+
+# --- Image Tiling ---
+tiling:
+  tile_size: 640        # pixels (YOLO input size)
+  overlap: 64           # pixels of overlap between tiles
+  min_tile_coverage: 0.5  # reject tiles with >50% black/no-data
+
+# --- Classical CV Pre-Filter ---
+cv_filter:
+  edge_density:
+    canny_low: 50
+    canny_high: 150
+    min_edge_ratio: 0.02    # minimum fraction of edge pixels
+  texture:
+    entropy_min: 3.0        # minimum Shannon entropy
+    contrast_min: 10.0      # minimum Haralick contrast
+  color_variance:
+    min_channel_std: 8.0    # minimum std across color channels
+  combined_threshold: 0.4   # minimum relevance score to pass
+
+# --- Vision Models ---
+vision:
+  model_architecture: "yolov8n"  # fallback if YOLO26 unavailable
+  specialist_classes:
+    - name: "sedimentary_layering"
+      description: "Layered sediment structures indicative of depositional processes"
+      model_path: "models/yolo_sedimentary.pt"
+      confidence_threshold: 0.25
+    - name: "mineral_water_interaction"
+      description: "Evaporite/gypsum-type formations from mineral-water processes"
+      model_path: "models/yolo_mineral_water.pt"
+      confidence_threshold: 0.25
+    - name: "erosion_morphology"
+      description: "Fluid-flow erosion patterns and channel morphology"
+      model_path: "models/yolo_erosion.pt"
+      confidence_threshold: 0.25
+  batch_size: 8
+  image_size: 640
+
+# --- Tabular Model ---
+tabular:
+  model_type: "xgboost"  # "random_forest" or "xgboost"
+  random_forest:
+    n_estimators: 500
+    max_depth: 12
+    min_samples_split: 5
+    min_samples_leaf: 2
+    class_weight: "balanced"
+  xgboost:
+    n_estimators: 500
+    max_depth: 8
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 1.0
+  cv_folds: 5
+  calibration_method: "isotonic"  # "sigmoid" or "isotonic"
+  model_save_path: "models/tabular_habitability.joblib"
+
+# --- ESI (Earth Similarity Index) ---
+esi:
+  earth_reference:
+    radius: 1.0         # Earth radii
+    density: 5.51        # g/cm³
+    escape_velocity: 1.0 # Earth units
+    surface_temp: 288.0  # K
+  weight_exponents:
+    radius: 0.57
+    density: 1.07
+    escape_velocity: 0.70
+    surface_temp: 5.58
+
+# --- Fusion Layer ---
+fusion:
+  weights:
+    tabular: 0.55       # weight for tabular habitability score
+    vision: 0.45        # weight for vision biosignature score
+  confidence:
+    method: "bootstrap"  # "bootstrap" or "bayesian"
+    n_bootstrap: 1000
+    confidence_level: 0.95
+  score_range: [0.0, 1.0]
+
+# --- Explainability ---
+explainability:
+  shap:
+    max_samples: 500     # limit SHAP computation for speed
+    plot_type: "bar"     # "bar", "beeswarm", "waterfall"
+  top_n_factors: 5       # number of top contributing factors to report
+
+# --- Streamlit UI ---
+ui:
+  page_title: "ExoScope — HBLI Dashboard"
+  page_icon: "🔭"
+  layout: "wide"
+  theme:
+    primary_color: "#6C63FF"
+    background_color: "#0E1117"
+    secondary_background_color: "#1A1D26"
+    text_color: "#FAFAFA"
+    font: "Inter"
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  format: "%(asctime)s | %(name)-25s | %(levelname)-8s | %(message)s"
+  log_file: "logs/exoscope.log"
