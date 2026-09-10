@@ -1,4 +1,8 @@
-# ── Python ──
+# ============================================================
+# ExoScope / HBLI — Git Ignore Rules
+# ============================================================
+
+# ── Python Bytecode & Builds ──
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,24 +10,35 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+eggs/
+.eggs/
 *.egg
 
-# ── Virtual Environment ──
+# ── Virtual Environments ──
 venv/
 env/
 .venv/
 ENV/
+env.bak/
+venv.bak/
 
-# ── Testing & Coverage ──
+# ── Testing, Coverage & Linters ──
 .pytest_cache/
 .coverage
 htmlcov/
 .coverage.*
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
 
-# ── YOLO & Machine Learning Artifacts ──
+# ── Machine Learning & Vision Artifacts ──
 runs/
 wandb/
+lightning_logs/
+.cache/
 *.pt
+*.pth
 *.onnx
 *.engine
 *.tflite
@@ -32,8 +47,20 @@ models/*.pkl
 models/*.pt
 models/*.onnx
 models/*.json
+models/checkpoints/
 
-# ── Data Directories (keep structure via .gitkeep) ──
+# ── Large Astronomical & High-Volume Data ──
+*.fits
+*.fit
+*.fts
+*.h5
+*.hdf5
+*.parquet
+*.feather
+.astropy/
+.astroquery/
+
+# ── Data Directories (Preserve structure via .gitkeep) ──
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
@@ -45,6 +72,14 @@ data/vision/*
 data/labels/*
 !data/labels/.gitkeep
 
+# ── Bulk Data Ingestion Downloads (500MB – 30GB+) ──
+data/exoplanets_bulk/
+data/exoplanets_*/
+data/*_bulk/
+data/bulk/
+data/downloads/
+data/test_*/
+
 # ── Logs & Reports ──
 logs/*.log
 logs/*
@@ -52,25 +87,36 @@ logs/*
 reports/*.html
 reports/*.json
 reports/*.png
+reports/figures/
 
-# ── Environment & Secrets ──
+# ── Streamlit & Secrets ──
 .env
 .env.*
 !.env.example
+.streamlit/secrets.toml
+.streamlit/*.local.toml
 
-# ── IDE & Editor ──
+# ── IDEs & Text Editors ──
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 *.sublime-project
 *.sublime-workspace
 
 # ── OS Generated Files ──
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
 desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
-# ── Jupyter ──
+# ── Jupyter Notebooks ──
 .ipynb_checkpoints/
-
+*-checkpoint.ipynb
