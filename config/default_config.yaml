@@ -22,26 +22,70 @@ paths:
 # --- Data Ingestion ---
 data_ingestion:
   exoplanet_archive:
-    table_name: "pscomppars"  # Planetary Systems Composite Parameters
+    table_name: "pscomppars"  # Planetary Systems Composite Parameters (1 row/planet)
+    tap_url: "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
+    # Full column set pulled from the archive. Everything here is fed to the
+    # feature engineering layer, so adding a column here makes it available
+    # to the model. Leave empty/null to use the module default (all columns).
     columns:
-      - "pl_name"        # Planet name
-      - "hostname"       # Host star name
-      - "pl_rade"        # Planet radius (Earth radii)
-      - "pl_bmasse"      # Planet mass (Earth masses)
-      - "pl_dens"        # Planet density (g/cm³)
-      - "pl_orbeccen"    # Orbital eccentricity
-      - "pl_orbsmax"     # Orbital semi-major axis (AU)
-      - "pl_orbper"      # Orbital period (days)
-      - "pl_insol"       # Insolation flux (Earth flux)
-      - "pl_eqt"         # Equilibrium temperature (K)
-      - "st_teff"        # Stellar effective temperature (K)
-      - "st_lum"         # Stellar luminosity (log solar)
-      - "st_mass"        # Stellar mass (solar masses)
-      - "st_rad"         # Stellar radius (solar radii)
-      - "st_age"         # Stellar age (Gyr)
-      - "disc_facility"  # Discovery facility
+      # ── Planetary parameters ──
+      - "pl_name"           # Planet name
+      - "hostname"          # Host star name
+      - "pl_letter"         # Planet letter within the system
+      - "pl_rade"           # Planet radius (Earth radii)
+      - "pl_bmasse"         # Planet mass or M*sin(i) (Earth masses)
+      - "pl_bmassprov"      # How the mass was determined (Mass / Msini / M-R relation)
+      - "pl_dens"           # Planet density (g/cm³)
+      - "pl_orbper"         # Orbital period (days)
+      - "pl_orbsmax"        # Orbital semi-major axis (AU)
+      - "pl_orbeccen"       # Orbital eccentricity
+      - "pl_insol"          # Insolation flux (Earth flux)
+      - "pl_eqt"            # Equilibrium temperature (K)
+      # ── Transit / RV geometry ──
+      - "pl_trandep"        # Transit depth (%)
+      - "pl_trandur"        # Transit duration (hours)
+      - "pl_ratdor"         # a/R* ratio
+      - "pl_ratror"         # Rp/R* ratio
+      - "pl_imppar"         # Impact parameter
+      - "pl_rvamp"          # Radial velocity semi-amplitude (m/s)
+      # ── Stellar parameters ──
+      - "st_spectype"       # Spectral type (e.g. "G2 V")
+      - "st_teff"           # Stellar effective temperature (K)
+      - "st_rad"            # Stellar radius (solar radii)
+      - "st_mass"           # Stellar mass (solar masses)
+      - "st_met"            # Stellar metallicity [Fe/H]
+      - "st_metratio"       # Metallicity ratio used
+      - "st_logg"           # Stellar surface gravity (log g)
+      - "st_lum"            # Stellar luminosity (log L☉)
+      - "st_age"            # Stellar age (Gyr)
+      - "st_dens"           # Stellar density (g/cm³)
+      - "st_vsin"           # Projected rotational velocity (km/s)
+      - "st_rotp"           # Stellar rotation period (days)
+      # ── System & astrometry ──
+      - "sy_snum"           # Number of stars in the system
+      - "sy_pnum"           # Number of planets in the system
+      - "sy_mnum"           # Number of moons
+      - "sy_dist"           # Distance to the system (parsecs)
+      - "sy_plx"            # Parallax (mas)
+      - "sy_pm"             # Total proper motion (mas/yr)
+      - "sy_vmag"           # V (Johnson) magnitude
+      - "sy_kmag"           # Ks (2MASS) magnitude
+      - "sy_gaiamag"        # Gaia magnitude
+      - "ra"                # Right ascension (deg)
+      - "dec"               # Declination (deg)
+      # ── Discovery metadata ──
+      - "discoverymethod"   # Discovery method
+      - "disc_year"         # Discovery year
+      - "disc_facility"     # Discovery facility
+      - "pl_controv_flag"   # Controversial detection flag
+      - "ttv_flag"          # Transit timing variations observed
+      - "tran_flag"         # Detected by transit
+      - "rv_flag"           # Detected by radial velocity
     cache_file: "data/tabular/exoplanets.csv"
-    max_rows: null  # null = fetch all
+    max_rows: null           # null = fetch the full catalog
+    request_timeout: 180     # seconds
+    max_retries: 3
+    allow_synthetic: false   # never silently substitute fabricated data
 
   pds:
     base_url: "https://pds-imaging.jpl.nasa.gov"
@@ -122,8 +166,26 @@ tabular:
     colsample_bytree: 0.8
     scale_pos_weight: 1.0
   cv_folds: 5
-  calibration_method: "isotonic"  # "sigmoid" or "isotonic"
+  search_iterations: 15           # RandomizedSearchCV n_iter
+  # "sigmoid" (Platt) or "isotonic". Sigmoid is the default because the
+  # positive class here is tiny (~65 of 6,360 planets). Isotonic fits a
+  # step function, and with that few positives it collapses the catalog
+  # into ~137 distinct scores — tying the entire top of the ranked target
+  # list at one value and making the ordering arbitrary. Sigmoid keeps
+  # 6,300+ distinct scores at an equal or better Brier score.
+  calibration_method: "sigmoid"
   model_save_path: "models/tabular_habitability.joblib"
+  # --- Proxy label definition ---
+  # There is no ground truth for habitability, so the training label is a
+  # rule built from published thresholds. Counts on the current catalog
+  # track the Planetary Habitability Laboratory lists closely
+  # (~21 conservative / ~73 optimistic of 6,360 planets).
+  labeling:
+    rule: "optimistic"                    # "conservative" or "optimistic"
+    radius_range_conservative: [0.5, 1.8] # R⊕ — below the Fulton radius gap
+    radius_range_optimistic: [0.5, 2.5]   # R⊕ — includes large super-Earths
+    eqt_range: [180.0, 310.0]             # K, fallback when HZ is unavailable
+    exclude_controversial: true
 
 # --- ESI (Earth Similarity Index) ---
 esi:

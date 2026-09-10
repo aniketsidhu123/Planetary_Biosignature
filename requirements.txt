@@ -1,23 +1,34 @@
 # ============================================================
 # ExoScope / HBLI — Requirements
 # ============================================================
-
-# --- Core ML / Vision ---
-ultralytics>=8.3.0
-opencv-python-headless>=4.9.0
-scikit-learn>=1.4.0
-xgboost>=2.0.0
-shap>=0.44.0
+# Install with:  pip install -r requirements.txt
+#
+# macOS note: XGBoost links against the OpenMP runtime. Without it the
+# import fails and ExoScope falls back to Random Forest automatically.
+# To enable XGBoost:  brew install libomp
 
 # --- Data Access ---
-astroquery>=0.4.7
+# The NASA Exoplanet Archive is queried directly over its TAP HTTP
+# endpoint, so `requests` is the only hard dependency for ingestion.
+# `astroquery` is an optional secondary path — see requirements-optional.txt.
 requests>=2.31.0
 
 # --- Data Processing ---
 pandas>=2.2.0
 numpy>=1.26.0
+scipy>=1.12.0
 Pillow>=10.0.0
 scikit-image>=0.22.0
+
+# --- Core ML ---
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+shap>=0.44.0
+joblib>=1.3.0
+
+# --- Computer Vision ---
+ultralytics>=8.3.0
+opencv-python-headless>=4.9.0
 
 # --- Visualization ---
 matplotlib>=3.8.0
@@ -27,15 +38,9 @@ plotly>=5.18.0
 # --- Web UI ---
 streamlit>=1.38.0
 
-# --- Configuration & Logging ---
+# --- Configuration ---
 PyYAML>=6.0.0
-
-# --- Optimization (Phase 5) ---
-onnxruntime>=1.18.0
 
 # --- Testing ---
 pytest>=8.0.0
 pytest-cov>=4.1.0
-
-# --- Labeling Pipeline ---
-labelImg>=1.8.6

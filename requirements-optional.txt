@@ -1,0 +1,19 @@
+# ============================================================
+# ExoScope / HBLI — Optional Extras
+# ============================================================
+# Nothing here is needed to run the dashboard, train the model, or fetch
+# data from NASA. Install only what you need:
+#     pip install -r requirements-optional.txt
+
+# Secondary path to the NASA Exoplanet Archive. ExoScope queries the TAP
+# endpoint over plain HTTP by default (faster, far fewer dependencies);
+# astroquery is tried only if that call fails.
+astroquery>=0.4.7
+
+# Manual annotation UI for the YOLO labeling pipeline
+# (tools/label_pipeline.py writes YOLO-format pre-labels for it to refine).
+# Requires PyQt5 and may not install cleanly on the newest Python releases.
+labelImg>=1.8.6
+
+# ONNX export/runtime for optimized inference
+onnxruntime>=1.18.0

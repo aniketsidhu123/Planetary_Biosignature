@@ -53,9 +53,79 @@ class TestTabularModel:
 
         assert result.model is not None
         assert result.calibrated_model is not None
-        assert len(result.feature_names) == len(feature_cols)
         assert "accuracy" in result.cv_scores
         assert result.cv_scores["accuracy"] > 0.0
+
+        # Label-defining columns are withheld by default, so the trained
+        # feature set is the candidate set minus those exclusions.
+        assert set(result.feature_names) | set(result.excluded_features) == set(feature_cols)
+        assert result.excluded_features, "Expected label-defining features to be withheld"
+        assert "pl_rade" not in result.feature_names
+
+    def test_train_keeps_all_features_when_leakage_allowed(self):
+        """exclude_label_features=False should train on every candidate column."""
+        from src.models.tabular_model import TabularHabitabilityModel
+        from src.preprocessing.feature_engineering import get_feature_columns
+
+        df = self._make_engineered_df(150)
+        feature_cols = get_feature_columns(df)["all_features"]
+
+        model = TabularHabitabilityModel(model_type="xgboost")
+        result = model.train(df, feature_cols, exclude_label_features=False)
+
+        assert result.feature_names == feature_cols
+        assert result.excluded_features == []
+
+    def test_holdout_metrics_reported(self):
+        """Training should report held-out metrics alongside CV metrics."""
+        from src.models.tabular_model import TabularHabitabilityModel
+        from src.preprocessing.feature_engineering import get_feature_columns
+
+        df = self._make_engineered_df(400)
+        feature_cols = get_feature_columns(df)["all_features"]
+
+        model = TabularHabitabilityModel(model_type="random_forest")
+        result = model.train(df, feature_cols)
+
+        assert result.holdout_scores, "Expected a held-out evaluation"
+        assert 0.0 <= result.holdout_scores["f1"] <= 1.0
+        assert 0.0 <= result.holdout_scores["brier"] <= 1.0
+        assert result.holdout_scores["n_test"] > 0
+        assert result.label_balance["positive"] > 0
+
+    def test_score_catalog_ranks_planets(self):
+        """score_catalog should return every planet, ranked by score."""
+        from src.models.tabular_model import TabularHabitabilityModel
+        from src.preprocessing.feature_engineering import get_feature_columns
+
+        df = self._make_engineered_df(200)
+        feature_cols = get_feature_columns(df)["all_features"]
+
+        model = TabularHabitabilityModel(model_type="random_forest")
+        model.train(df, feature_cols)
+        ranked = model.score_catalog(df)
+
+        assert len(ranked) == len(df)
+        scores = ranked["habitability_score"].values
+        assert (scores[:-1] >= scores[1:]).all(), "Results should be sorted descending"
+        assert (ranked["ci_lower"] <= ranked["habitability_score"]).all()
+        assert (ranked["habitability_score"] <= ranked["ci_upper"]).all()
+
+    def test_predict_rejects_missing_features(self):
+        """predict() should fail loudly when required features are absent."""
+        import pytest as _pytest
+        from src.models.tabular_model import TabularHabitabilityModel
+        from src.preprocessing.feature_engineering import get_feature_columns
+
+        df = self._make_engineered_df(150)
+        feature_cols = get_feature_columns(df)["all_features"]
+
+        model = TabularHabitabilityModel(model_type="random_forest")
+        model.train(df, feature_cols)
+
+        raw = df[["pl_name", "pl_rade"]].head(3)
+        with _pytest.raises(ValueError, match="missing"):
+            model.predict(raw)
 
     def test_train_random_forest(self):
         """Random Forest model should train without errors."""
@@ -98,6 +168,53 @@ class TestTabularModel:
                 "Unlikely Habitable", "Non-Habitable"
             ]
 
+    def test_confidence_intervals_stay_on_calibrated_scale(self):
+        """Intervals must bracket the score without saturating at 0 or 1.
+
+        Deriving the interval from the uncalibrated base learners mixes
+        probability scales: a booster with scale_pos_weight set for a rare
+        positive class outputs near 1.0 where the calibrated model says
+        0.80, which pins every upper bound to 1.0.
+        """
+        from src.models.tabular_model import TabularHabitabilityModel
+        from src.preprocessing.feature_engineering import get_feature_columns
+
+        df = self._make_engineered_df(400)
+        feature_cols = get_feature_columns(df)["all_features"]
+
+        model = TabularHabitabilityModel(model_type="xgboost")
+        model.train(df, feature_cols)
+        ranked = model.score_catalog(df)
+
+        scores = ranked["habitability_score"]
+        lower, upper = ranked["ci_lower"], ranked["ci_upper"]
+
+        assert (lower <= scores).all()
+        assert (scores <= upper).all()
+        assert ((lower >= 0.0) & (upper <= 1.0)).all()
+        # A confident prediction should not carry a bound pinned to 1.0.
+        confident = ranked[scores > 0.6]
+        if not confident.empty:
+            assert (confident["ci_upper"] < 1.0).any(), \
+                "Every upper bound saturated at 1.0 — scales are mixed"
+
+    def test_calibration_preserves_ranking(self):
+        """Sigmoid calibration must not collapse the catalog into few scores."""
+        from src.models.tabular_model import TabularHabitabilityModel
+        from src.preprocessing.feature_engineering import get_feature_columns
+
+        df = self._make_engineered_df(400)
+        feature_cols = get_feature_columns(df)["all_features"]
+
+        model = TabularHabitabilityModel(model_type="xgboost")
+        model.config = {**model.config, "calibration_method": "sigmoid"}
+        model.train(df, feature_cols)
+        ranked = model.score_catalog(df)
+
+        # Isotonic on a tiny positive class ties most of the top of the list
+        # at one value, which makes the ranked target table arbitrary.
+        assert ranked["habitability_score"].nunique() > len(df) * 0.5
+
     def test_model_save_load(self):
         """Model should save and load correctly."""
         from src.models.tabular_model import TabularHabitabilityModel
@@ -118,7 +235,8 @@ class TestTabularModel:
         model2.load_model(save_path)
 
         assert model2._is_trained
-        assert model2.feature_names == feature_cols
+        assert model2.feature_names == model.feature_names
+        assert model2.excluded_features == model.excluded_features
 
         # Cleanup
         Path(save_path).unlink(missing_ok=True)
@@ -215,7 +333,7 @@ class TestFusionLayer:
         assert len(result.disclaimers) > 0
 
     def test_fusion_weights(self):
-        """Fusion should respect configured weights."""
+        """Fusion should respect configured weights when both streams ran."""
         from src.models.fusion import FusionLayer
 
         fusion = FusionLayer(tabular_weight=0.8, vision_weight=0.2)
@@ -224,11 +342,88 @@ class TestFusionLayer:
             target_name="Test",
             tabular_score=1.0,
             vision_score=0.0,
+            # Imagery was analysed and scored zero — distinct from imagery
+            # never having been analysed, which renormalises the weights.
+            has_tabular=True,
+            has_vision=True,
         )
 
         # With weight 0.8 on tabular (=1.0), score should be ~0.8
         assert result.hbli_score > 0.7
         assert result.hbli_score < 0.9
+
+    def test_single_stream_renormalizes_weights(self):
+        """A stream that never ran must not drag the composite down."""
+        from src.models.fusion import FusionLayer
+
+        fusion = FusionLayer(tabular_weight=0.55, vision_weight=0.45)
+
+        tabular_only = fusion.fuse(
+            target_name="Tabular only",
+            tabular_score=0.95,
+            tabular_ci=(0.90, 0.99),
+            vision_score=0.0,
+        )
+        # Without renormalisation this would cap at 0.55 * 0.95 = 0.5225.
+        assert tabular_only.hbli_score == pytest.approx(0.95, abs=1e-6)
+        assert tabular_only.tabular_weight == pytest.approx(1.0)
+        assert tabular_only.vision_weight == pytest.approx(0.0)
+
+        vision_only = fusion.fuse(
+            target_name="Vision only",
+            tabular_score=0.0,
+            vision_score=0.80,
+            vision_features={"sedimentary_layering": 0.8},
+        )
+        assert vision_only.hbli_score == pytest.approx(0.80, abs=1e-6)
+        assert vision_only.vision_weight == pytest.approx(1.0)
+
+    def test_both_streams_use_configured_weights(self):
+        """When both streams run, the configured split is applied."""
+        from src.models.fusion import FusionLayer
+
+        fusion = FusionLayer(tabular_weight=0.55, vision_weight=0.45)
+        result = fusion.fuse(
+            target_name="Both",
+            tabular_score=0.80,
+            tabular_ci=(0.75, 0.85),
+            vision_score=0.40,
+            vision_ci=(0.35, 0.45),
+        )
+
+        assert result.hbli_score == pytest.approx(0.55 * 0.80 + 0.45 * 0.40, abs=1e-6)
+        assert result.tabular_weight == pytest.approx(0.55)
+        assert result.vision_weight == pytest.approx(0.45)
+
+    def test_absent_stream_not_listed_as_risk_factor(self):
+        """An unanalysed stream is absence of evidence, not a negative factor."""
+        from src.models.fusion import FusionLayer
+
+        result = FusionLayer().fuse(
+            target_name="Tabular only",
+            tabular_score=0.9,
+            tabular_ci=(0.85, 0.95),
+            vision_score=0.0,
+        )
+        factor_names = [name for name, _, _ in
+                        result.top_contributing_factors + result.risk_factors]
+        assert not any("Vision" in name for name in factor_names)
+
+    def test_explicit_stream_flags_override_inference(self):
+        """has_vision=True keeps a genuine zero-scoring vision result in play."""
+        from src.models.fusion import FusionLayer
+
+        fusion = FusionLayer(tabular_weight=0.55, vision_weight=0.45)
+        result = fusion.fuse(
+            target_name="Barren surface",
+            tabular_score=0.90,
+            vision_score=0.0,
+            has_tabular=True,
+            has_vision=True,
+        )
+        # Imagery WAS analysed and found nothing, so the zero should count.
+        assert result.hbli_score == pytest.approx(0.55 * 0.90, abs=1e-6)
+        assert result.vision_weight == pytest.approx(0.45)
 
     def test_categorization(self):
         """Scores should be categorized correctly."""

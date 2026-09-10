@@ -120,3 +120,6 @@ $RECYCLE.BIN/
 # ── Jupyter Notebooks ──
 .ipynb_checkpoints/
 *-checkpoint.ipynb
+
+# ── Local tooling ──
+.claude/

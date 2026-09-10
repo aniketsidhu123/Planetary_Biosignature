@@ -1,0 +1,16 @@
+# ExoScope — Streamlit theme
+# Kept in sync with the CSS custom properties in app/theme.py.
+
+[theme]
+base = "dark"
+primaryColor = "#7C6CFF"
+backgroundColor = "#0A0C12"
+secondaryBackgroundColor = "#12151F"
+textColor = "#ECEEF4"
+font = "sans serif"
+
+[server]
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false

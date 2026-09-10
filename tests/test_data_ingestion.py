@@ -56,21 +56,97 @@ class TestExoplanetArchive:
         assert summary["total_planets"] == 50
         assert "columns" in summary
 
-    def test_fetch_falls_back_to_synthetic(self):
-        """fetch_exoplanet_data should fall back to synthetic when archive unavailable."""
-        from src.data_ingestion.exoplanet_archive import fetch_exoplanet_data
+    def test_fetch_raises_when_archive_unreachable(self):
+        """A failed fetch must raise, not silently substitute fake planets."""
+        from src.data_ingestion.exoplanet_archive import (
+            fetch_exoplanet_data, ExoplanetArchiveError,
+        )
 
-        # Should work without network access (uses synthetic fallback)
-        df = fetch_exoplanet_data(force_refresh=True,
-                                  cache_path="data/tabular/test_exoplanets.csv")
+        cache = Path("data/tabular/test_unreachable.csv")
+        with patch("src.data_ingestion.exoplanet_archive.query_tap",
+                   side_effect=ExoplanetArchiveError("network down")), \
+             patch("src.data_ingestion.exoplanet_archive._fetch_via_astroquery",
+                   side_effect=ExoplanetArchiveError("astroquery down")):
+            with pytest.raises(ExoplanetArchiveError, match="Could not reach"):
+                fetch_exoplanet_data(force_refresh=True, cache_path=str(cache))
 
-        assert len(df) > 0
-        assert "pl_rade" in df.columns or len(df.columns) > 0
+        assert not cache.exists(), "No cache should be written for a failed fetch"
 
-        # Cleanup
-        test_cache = Path("data/tabular/test_exoplanets.csv")
-        if test_cache.exists():
-            test_cache.unlink()
+    def test_synthetic_fallback_is_opt_in_and_tagged(self):
+        """allow_synthetic=True yields data flagged as synthetic, cached separately."""
+        from src.data_ingestion.exoplanet_archive import (
+            fetch_exoplanet_data, ExoplanetArchiveError,
+        )
+
+        cache = Path("data/tabular/test_exoplanets.csv")
+        synthetic_cache = Path("data/tabular/test_exoplanets_synthetic.csv")
+        try:
+            with patch("src.data_ingestion.exoplanet_archive.query_tap",
+                       side_effect=ExoplanetArchiveError("network down")), \
+                 patch("src.data_ingestion.exoplanet_archive._fetch_via_astroquery",
+                       side_effect=ExoplanetArchiveError("astroquery down")):
+                df, meta = fetch_exoplanet_data(
+                    force_refresh=True,
+                    cache_path=str(cache),
+                    allow_synthetic=True,
+                    return_metadata=True,
+                )
+
+            assert len(df) > 0
+            assert meta.is_synthetic is True
+            assert meta.source == "synthetic"
+            assert "SYNTHETIC" in meta.notes
+            # Fabricated rows must never occupy the real cache path.
+            assert not cache.exists()
+            assert synthetic_cache.exists()
+        finally:
+            for path in (cache, synthetic_cache):
+                path.unlink(missing_ok=True)
+                path.with_suffix(path.suffix + ".meta.json").unlink(missing_ok=True)
+
+    def test_tap_query_places_top_after_select(self):
+        """ADQL requires TOP immediately after SELECT, not trailing the query."""
+        from src.data_ingestion.exoplanet_archive import build_tap_query
+
+        query = build_tap_query(["pl_name", "pl_rade"], table="pscomppars", max_rows=25)
+        assert query.startswith("SELECT TOP 25 ")
+        assert "FROM pscomppars" in query
+        assert not query.rstrip().endswith("TOP 25")
+
+        unlimited = build_tap_query(["pl_name"], table="pscomppars")
+        assert "TOP" not in unlimited
+
+    def test_cache_roundtrip_preserves_provenance(self):
+        """A cached table should report the provenance it was written with."""
+        from src.data_ingestion.exoplanet_archive import (
+            fetch_exoplanet_data, get_cache_metadata,
+        )
+
+        cache = Path("data/tabular/test_provenance.csv")
+        frame = pd.DataFrame({
+            "pl_name": ["Test-1 b", "Test-2 b"],
+            "pl_rade": [1.0, 2.0],
+            "pl_eqt": [255.0, 400.0],
+        })
+        try:
+            with patch("src.data_ingestion.exoplanet_archive.query_tap", return_value=frame):
+                _, meta = fetch_exoplanet_data(
+                    columns=["pl_name", "pl_rade", "pl_eqt"],
+                    cache_path=str(cache),
+                    force_refresh=True,
+                    return_metadata=True,
+                )
+
+            assert meta.source == "nasa_tap"
+            assert meta.is_synthetic is False
+
+            reloaded = get_cache_metadata(str(cache))
+            assert reloaded is not None
+            assert reloaded.source == "nasa_tap"
+            assert reloaded.n_rows == 2
+        finally:
+            cache.unlink(missing_ok=True)
+            cache.with_suffix(cache.suffix + ".meta.json").unlink(missing_ok=True)
 
 
 class TestPDSClient:
