@@ -113,6 +113,8 @@ class FusionLayer:
         vision_ci: Optional[Tuple[float, float]] = None,
         tabular_features: Optional[Dict[str, float]] = None,
         vision_features: Optional[Dict[str, float]] = None,
+        has_tabular: Optional[bool] = None,
+        has_vision: Optional[bool] = None,
     ) -> HBLIResult:
         """Fuse tabular and vision scores into a composite HBLI score.
 
@@ -124,21 +126,35 @@ class FusionLayer:
             vision_ci: Optional (lower, upper) confidence interval for vision.
             tabular_features: Dict of tabular feature contributions.
             vision_features: Dict of vision feature contributions.
+            has_tabular: Whether a tabular score was actually computed.
+                Defaults to inferring availability from the inputs.
+            has_vision: Whether imagery was actually analysed. Defaults to
+                inferring availability from the inputs.
 
         Returns:
             Complete HBLIResult with score, CI, and explanations.
         """
-        # Compute composite score
-        hbli = (
-            self.tabular_weight * tabular_score
-            + self.vision_weight * vision_score
-        )
-        hbli = np.clip(hbli, *self.score_range)
+        # Infer which streams actually contributed. A stream that was never
+        # run is *absent*, not "scored zero" — treating it as zero silently
+        # caps the composite at the other stream's weight (a tabular-only
+        # analysis could never exceed 0.55), which reads as evidence
+        # against habitability when it is really an absence of evidence.
+        if has_tabular is None:
+            has_tabular = tabular_features is not None or tabular_score > 0.0
+        if has_vision is None:
+            has_vision = bool(vision_features) or vision_score > 0.0
+
+        w_tab, w_vis = self._effective_weights(has_tabular, has_vision)
+
+        hbli = float(np.clip(
+            w_tab * tabular_score + w_vis * vision_score, *self.score_range
+        ))
 
         # Compute confidence interval
         ci_lower, ci_upper = self._compute_confidence_interval(
             tabular_score, tabular_ci,
             vision_score, vision_ci,
+            w_tab, w_vis,
         )
 
         # Build attribution breakdown
@@ -146,6 +162,8 @@ class FusionLayer:
             tabular_score, vision_score,
             tabular_features or {},
             vision_features or {},
+            w_tab, w_vis,
+            has_tabular, has_vision,
         )
 
         # Categorize
@@ -159,17 +177,21 @@ class FusionLayer:
             confidence_level=self.confidence_level,
             tabular_score=float(tabular_score),
             vision_score=float(vision_score),
-            tabular_weight=self.tabular_weight,
-            vision_weight=self.vision_weight,
+            tabular_weight=w_tab,
+            vision_weight=w_vis,
             top_contributing_factors=top_factors,
             risk_factors=risk_factors,
             category=category,
             category_description=description,
         )
 
+        streams = "+".join(
+            s for s, on in (("tabular", has_tabular), ("vision", has_vision)) if on
+        ) or "none"
         logger.info(
             f"HBLI for {target_name}: {hbli:.4f} "
-            f"[{ci_lower:.4f}, {ci_upper:.4f}] — {category}"
+            f"[{ci_lower:.4f}, {ci_upper:.4f}] — {category} "
+            f"(streams: {streams}, weights {w_tab:.2f}/{w_vis:.2f})"
         )
 
         return result
@@ -202,12 +224,40 @@ class FusionLayer:
 
         return results
 
+    def _effective_weights(
+        self, has_tabular: bool, has_vision: bool
+    ) -> Tuple[float, float]:
+        """Return fusion weights renormalised over the available streams.
+
+        When only one stream ran, it takes the full weight, so the
+        composite remains on a comparable 0-1 scale instead of being
+        capped by the missing stream's share.
+
+        Args:
+            has_tabular: Whether a tabular score is available.
+            has_vision: Whether a vision score is available.
+
+        Returns:
+            (tabular_weight, vision_weight).
+        """
+        if has_tabular and has_vision:
+            return self.tabular_weight, self.vision_weight
+        if has_tabular:
+            return 1.0, 0.0
+        if has_vision:
+            return 0.0, 1.0
+        # Nothing to fuse — keep the configured split so the result is
+        # still well-formed, and let the score speak for itself (0.0).
+        return self.tabular_weight, self.vision_weight
+
     def _compute_confidence_interval(
         self,
         tab_score: float,
         tab_ci: Optional[Tuple[float, float]],
         vis_score: float,
         vis_ci: Optional[Tuple[float, float]],
+        w_tab: Optional[float] = None,
+        w_vis: Optional[float] = None,
     ) -> Tuple[float, float]:
         """Compute confidence interval for the fused score.
 
@@ -215,6 +265,8 @@ class FusionLayer:
         are provided, otherwise uses a heuristic margin.
         """
         alpha = (1.0 - self.confidence_level) / 2.0
+        w_tab = self.tabular_weight if w_tab is None else w_tab
+        w_vis = self.vision_weight if w_vis is None else w_vis
 
         if tab_ci and vis_ci:
             # Bootstrap from component distributions
@@ -227,10 +279,7 @@ class FusionLayer:
             tab_samples = rng.normal(tab_score, max(tab_std, 0.01), self.n_bootstrap)
             vis_samples = rng.normal(vis_score, max(vis_std, 0.01), self.n_bootstrap)
 
-            fused_samples = (
-                self.tabular_weight * tab_samples
-                + self.vision_weight * vis_samples
-            )
+            fused_samples = w_tab * tab_samples + w_vis * vis_samples
             fused_samples = np.clip(fused_samples, *self.score_range)
 
             ci_lower = float(np.percentile(fused_samples, 100 * alpha))
@@ -238,14 +287,15 @@ class FusionLayer:
 
         elif tab_ci:
             # Only tabular CI available
-            ci_lower = float(self.tabular_weight * tab_ci[0] + self.vision_weight * vis_score)
-            ci_upper = float(self.tabular_weight * tab_ci[1] + self.vision_weight * vis_score)
+            ci_lower = float(w_tab * tab_ci[0] + w_vis * vis_score)
+            ci_upper = float(w_tab * tab_ci[1] + w_vis * vis_score)
 
         else:
             # Heuristic margin based on component scores
-            fused = self.tabular_weight * tab_score + self.vision_weight * vis_score
-            # Wider CI when scores disagree (higher epistemic uncertainty)
-            disagreement = abs(tab_score - vis_score)
+            fused = w_tab * tab_score + w_vis * vis_score
+            # Wider CI when scores disagree (higher epistemic uncertainty),
+            # but only when both streams actually ran.
+            disagreement = abs(tab_score - vis_score) if (w_tab and w_vis) else 0.0
             margin = 0.05 + 0.15 * disagreement
             ci_lower = float(np.clip(fused - margin, *self.score_range))
             ci_upper = float(np.clip(fused + margin, *self.score_range))
@@ -258,6 +308,10 @@ class FusionLayer:
         vis_score: float,
         tab_features: Dict[str, float],
         vis_features: Dict[str, float],
+        w_tab: Optional[float] = None,
+        w_vis: Optional[float] = None,
+        has_tabular: bool = True,
+        has_vision: bool = True,
     ) -> Tuple[List[Tuple[str, float, str]], List[Tuple[str, float, str]]]:
         """Build human-readable attribution breakdown.
 
@@ -265,29 +319,34 @@ class FusionLayer:
             (top_positive_factors, risk_factors) — each is a list of
             (factor_name, contribution_magnitude, direction_description).
         """
+        w_tab = self.tabular_weight if w_tab is None else w_tab
+        w_vis = self.vision_weight if w_vis is None else w_vis
         all_contributions = []
 
         # Tabular contributions
         for feat, value in tab_features.items():
-            weighted = value * self.tabular_weight
             direction = "positive" if value > 0 else "negative"
-            readable_name = self._feature_to_readable(feat)
-            all_contributions.append((readable_name, weighted, direction))
+            all_contributions.append(
+                (self._feature_to_readable(feat), value * w_tab, direction)
+            )
 
         # Vision contributions
         for feat, value in vis_features.items():
-            weighted = value * self.vision_weight
             direction = "detected" if value > 0.3 else "not detected"
-            readable_name = self._feature_to_readable(feat)
-            all_contributions.append((readable_name, weighted, direction))
+            all_contributions.append(
+                (self._feature_to_readable(feat), value * w_vis, direction)
+            )
 
-        # Add pipeline-level contributions
-        all_contributions.append(
-            ("Tabular habitability", tab_score * self.tabular_weight, "pipeline score")
-        )
-        all_contributions.append(
-            ("Vision biosignature proxy", vis_score * self.vision_weight, "pipeline score")
-        )
+        # Pipeline-level contributions — only for streams that actually ran,
+        # so an unanalysed stream is not reported as a zero-scoring factor.
+        if has_tabular:
+            all_contributions.append(
+                ("Tabular habitability", tab_score * w_tab, "pipeline score")
+            )
+        if has_vision:
+            all_contributions.append(
+                ("Vision biosignature proxy", vis_score * w_vis, "pipeline score")
+            )
 
         # Sort by absolute contribution
         all_contributions.sort(key=lambda x: abs(x[1]), reverse=True)

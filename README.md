@@ -5,41 +5,41 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.38+-red.svg)](https://streamlit.io/)
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.0+-orange.svg)](https://xgboost.ai/)
 [![Ultralytics YOLO](https://img.shields.io/badge/YOLO-v8%2Fv11-blueviolet.svg)](https://ultralytics.com/)
-[![Tests](https://img.shields.io/badge/pytest-46%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-71%20passed-brightgreen.svg)](tests/)
 
-> **A composite, explainable habitability and biosignature-likelihood scoring system** that fuses physics-grounded planetary parameters with computer-vision surface analysis — engineered from the ground up to run efficiently on consumer hardware.
-
----
-
-## ⚠️ Important Scientific Disclaimers
-
-- **No output should ever be interpreted as "X% chance of life."** All scores represent a *biosignature and habitability likelihood index based on proxy indicators validated against Earth analog environments.*
-- **False positives are the dominant historical risk in astrobiology pattern-matching** — abiotic geochemical processes can mimic biological signatures. ExoScope enforces calibrated uncertainty bounds to mitigate overinterpretation.
-- **Vision models are trained and validated exclusively on Earth analog and Mars planetary data**; out-of-distribution generalization to actual exoplanetary surfaces is fundamentally bounded by observational limits.
+> **A composite, explainable habitability and biosignature-likelihood scoring system** that fuses physics-grounded planetary parameters with computer-vision surface analysis — engineered to run efficiently on consumer hardware.
 
 ---
 
-## 🌌 System Overview
+## ⚠️ Read this first
 
-ExoScope implements a dual-stream multi-modal architecture designed to triage and prioritize planetary targets for follow-up observation:
+- **No output should ever be read as "X% chance of life."** Every score is a *habitability and biosignature likelihood index built from proxy indicators*, validated against Earth analog environments.
+- **The training label is a rule, not an observation.** There is no ground truth for exoplanet habitability. The model is trained against published threshold criteria (rocky radius × Kopparapu habitable zone), so its accuracy measures *agreement with that rule* — never agreement with biology.
+- **False positives are the dominant historical risk in astrobiology pattern-matching.** Abiotic geochemistry mimics biological signatures. ExoScope reports calibrated uncertainty bounds to blunt overinterpretation.
+- **Vision models are trained on Earth-analog and Mars data only.** Generalization to real exoplanet surfaces is bounded by observational limits, and the shipped repository contains **no trained YOLO weights** — the detector stack runs in clearly-labelled simulation mode until you train and supply them.
+- **ExoScope never silently substitutes fake data.** If the NASA archive is unreachable, it stops and says so. Generated development data is opt-in, written to a separate cache path, and flagged in the UI everywhere it appears.
+
+---
+
+## 🌌 System overview
 
 ```
                           ┌───────────────────────────────┐
                           │     Data Ingestion Layer      │
-                          │  (NASA Exoplanet Archive TAP, │
-                          │   NASA PDS / ISRO Bhoonidhi)  │
+                          │  NASA Exoplanet Archive TAP   │
+                          │  6,360 planets × 48 columns   │
                           └───────────────┬───────────────┘
                                           │
                   ┌───────────────────────┴───────────────────────┐
                   │                                               │
        ┌──────────▼──────────┐                         ┌──────────▼──────────┐
-       │   VISION STREAM     │                         │   TABULAR STREAM    │
+       │   TABULAR STREAM    │                         │   VISION STREAM     │
        │                     │                         │                     │
-       │ 1. Classical CV     │                         │ 1. 40+ Engineered   │
-       │    Pre-Filter       │                         │    Astrophysics     │
-       │    (Edge/Entropy)   │                         │    Features (ESI)   │
-       │ 2. Specialist YOLO  │                         │ 2. Calibrated       │
-       │    Detector Stack   │                         │    XGBoost/RF       │
+       │ 1. ~180 engineered  │                         │ 1. Classical CV     │
+       │    features from    │                         │    pre-filter       │
+       │    every NASA column│                         │    (edge/entropy)   │
+       │ 2. Calibrated       │                         │ 2. Specialist YOLO  │
+       │    XGBoost / RF     │                         │    detector stack   │
        └──────────┬──────────┘                         └──────────┬──────────┘
                   │                                               │
                   └───────────────────────┬───────────────────────┘
@@ -47,7 +47,8 @@ ExoScope implements a dual-stream multi-modal architecture designed to triage an
                                ┌──────────▼──────────┐
                                │ Composite Fusion &  │
                                │ Uncertainty Engine  │
-                               │ (Bootstrap 95% CI)  │
+                               │  (weights adapt to  │
+                               │  available streams) │
                                └──────────┬──────────┘
                                           │
                                ┌──────────▼──────────┐
@@ -58,224 +59,186 @@ ExoScope implements a dual-stream multi-modal architecture designed to triage an
 
 ---
 
-## 🚀 Key Features
+## 🚀 Key features
 
-### 1. Physics-Grounded Tabular Habitability Model
-- **40+ Derived Astrophysical Features**:
-  - **Earth Similarity Index (ESI)**: Multi-parameter geometric mean across planetary radius, bulk density, escape velocity, and surface equilibrium temperature.
-  - **Habitable Zone (HZ) Flux Boundaries**: Kopparapu et al. runaway greenhouse and maximum greenhouse solar insolation boundaries.
-  - **Tidal Locking Likelihood**: Orbital period vs. spin-orbit synchronization time based on host star mass and semi-major axis.
-  - **Stellar Activity & Flare Exposure**: Host star effective temperature, luminosity, and age-dependent flare probability.
-- **Calibrated Ensemble Classifiers**: XGBoost and Random Forest models tuned via `StratifiedKFold` cross-validation with **Isotonic Regression** and **Platt Scaling** for reliable probability calibration.
-- **Explainable AI (SHAP)**: Feature contribution breakdown (TreeExplainer) identifying primary positive habitability drivers and negative risk factors for each planet.
+### 1. Direct NASA Exoplanet Archive ingestion
 
-### 2. Tiered Specialist Computer Vision Pipeline
-- **Tier-1 Classical CV Pre-Filter**:
-  - Computes edge density (Canny), local entropy, and Laplacian texture variance.
-  - Rejects featureless, dark, or redundant background tiles before deep learning inference, **saving 60–80% CPU/GPU compute**.
-- **Tier-2 Specialist YOLO Stack**:
-  - Multi-head specialist architecture targeting specific geomorphological biosignature proxies:
-    - `sedimentary_layering`: Rhythmic bedding planes and depositional strata.
-    - `mineral_water_interaction`: Evaporite crusts, hydrothermal mineral alteration veins, and hydration halos.
-    - `erosion_morphology`: Dendritic fluvial networks, outflow channels, and alluvial fans.
-- **Visual Bounding Boxes**: Bounding box localization, confidence scoring, and visual overlay generation.
+- **Queries the TAP service over plain HTTP** — the full `pscomppars` composite table (one row per confirmed planet) arrives as CSV in a single ~7 s request. `astroquery` is supported as a fallback but is not required.
+- **48 columns, not 16.** Planetary parameters, transit/RV geometry, stellar properties, system architecture, astrometry and discovery metadata — the whole set is fetched and fed downstream.
+- **Provenance manifest.** Every cache write is accompanied by `<cache>.meta.json` recording source, row count, query and fetch time. The dashboard shows this in a banner so you always know whether you are looking at real observations.
+- **Fails loudly.** A failed fetch raises `ExoplanetArchiveError`. Synthetic development data requires `allow_synthetic=True`, is written to a separate path, and is tagged as synthetic in the metadata.
+- **Retries with backoff**, validated response parsing, `TOP n` row caps, and dtype coercion for the archive's sparse columns.
 
-### 3. HBLI Fusion & Uncertainty Quantification
-- **Mathematical Weighted Fusion**: Fuses tabular physical habitability ($S_{tab}$) and surface visual evidence ($S_{vis}$) into a unified index:
-  $$\text{HBLI} = w_{tab} \cdot S_{tab} + w_{vis} \cdot S_{vis}$$
-- **Bootstrap 95% Confidence Intervals**: Propagates component measurement and modeling uncertainties into strict confidence intervals $[CI_{lower}, CI_{upper}]$.
-- **Qualitative Likelihood Triage**:
-  - **High Likelihood** ($\ge 0.75$) — Prime target for high-resolution spectroscopy follow-up.
-  - **Moderate Likelihood** ($0.50 - 0.74$) — Favorable physical environment with partial proxy indicators.
-  - **Marginal Likelihood** ($0.25 - 0.49$) — Extreme physical conditions or ambiguous surface proxies.
-  - **Unlikely / Sterile** ($< 0.25$) — Hostile stellar flux or barren volcanic/cratered surface.
+### 2. Physics-grounded feature engineering (~180 features)
 
-### 4. Interactive Streamlit Web Application
-- **🪐 Mode 1: Exoplanet Analysis Lab**:
-  - Real-time physics parameter tuning with sliders (radius, mass, orbit, stellar temp).
-  - Live HBLI calculation, radar charts, and SHAP explainability waterfall plots.
-  - 3D interactive planetary orbit and habitable zone boundary visualization.
-- **🔬 Mode 2: Multi-Spectral Surface Analysis**:
-  - Upload or inspect Mars/Earth analog imagery.
-  - Interactive Classical CV pre-filter diagnostics.
-  - YOLO detection overlay with confidence thresholds and per-class area fractions.
-- **📊 Mode 3: NASA Exoplanet Catalog Explorer**:
-  - Interactive exploration of **5,600+ confirmed exoplanets** from the NASA Exoplanet Archive.
-  - Scatter plots (Radius vs. Period, Insolation vs. Temperature) with habitable zone overlays.
+| Family | What it contributes |
+|---|---|
+| **Habitable zone** | Kopparapu et al. (2014) effective-flux boundaries — recent Venus, runaway greenhouse, moist greenhouse, maximum greenhouse, early Mars — as AU distances, flux limits, a normalised position across the zone, and conservative/optimistic membership flags. |
+| **Earth Similarity Index** | Schulze-Makuch et al. (2011), over radius, density, escape velocity and equilibrium temperature. |
+| **Derived physics** | Surface gravity, escape velocity, orbital velocity, mass-radius residual against the rocky relation, rocky-composition likelihood, insolation swing across an eccentric orbit. |
+| **Stellar context** | Spectral class (from `st_spectype` where available, else binned `st_teff`), metallicity, surface gravity, rotation period, and an activity proxy that uses rotation when the archive supplies it. |
+| **System architecture** | Star/planet/moon counts, multiplicity flags, distance, parallax, proper motion, apparent magnitudes. |
+| **Observational metadata** | Discovery method, facility and era, detection flags, and mass provenance — these encode real selection effects and how well-characterised a planet actually is. |
+| **Missingness** | Explicit `<column>_missing` indicators. The archive is sparse, and "never measured" is genuine signal. |
 
-### 5. Bulk Exoplanet Ingestion Engine (`tools/fetch_exoplanet_data.py`)
-- **Flexible Target Quota**: Interactively prompts for custom download sizes (e.g. `500 MB`, `5 GB`, `10 GB`, `20 GB`, `30 GB+`).
-- **Live Terminal Telemetry**: Real-time ASCII progress bar, transfer rate (MB/s), ETA timer, and disk safety checks.
-- **Multi-Modal Data Streams**:
-  - **Catalogs**: Live queries to NASA Exoplanet Archive TAP API (`pscomppars`, `cumulative` KOI, `toi` candidates).
-  - **Photometric Transit Time-Series**: High-cadence normalized flux light curves (BJD, normalized flux, error bars, quality flags).
-  - **Atmospheric Transmission Spectra**: Synthetic/retrieval transmission curves ($0.6 - 14.0\,\mu\text{m}$) capturing $\text{H}_2\text{O}, \text{CH}_4, \text{CO}_2, \text{O}_3$ biosignature bands.
-  - **Planetary Analog Surface Imagery**: Realistic procedural generation across 6 distinct geological regimes (Sedimentary, Craters, Fluvial channels, Dunes, Hydrothermal veins, Basalt) and 5 planetary color palettes (Mars rust, lunar basalt, evaporite salt, hydrothermal sulfur, permafrost).
-  - **Manifest Generation**: Generates `manifest.json` with an audit trail and an auto-generated dataset `README.md`.
+Feature engineering **does not impute by default**. A median habitable-zone boundary is not a typical value — it is a *different star's* habitable zone, and substituting one turns "not measured" into a confident wrong answer in the UI. The model imputes at fit and predict time, where that policy belongs.
 
-### 6. Calibration & Negative Control Verification
-- **Reliability Diagnostics**: Brier score calculation, expected calibration error (ECE), and reliability diagrams.
-- **Null-Model Negative Controls**: Evaluates pipelines against randomized Gaussian noise and scrambled label distributions to guarantee zero false confidence spikes.
+### 3. Calibrated habitability model over the NASA feature set
 
----
+- **XGBoost or Random Forest**, tuned with `RandomizedSearchCV` on average precision (robust under the severe class imbalance — ~65 positives in 6,360 planets).
+- **Held-out evaluation** on planets the model never saw, alongside cross-validation, with the confusion matrix and a warning when the positive count is too small for the metrics to be precise.
+- **Leakage handling.** The columns that define the label rule are withheld by default, so the model must predict habitability from the *rest* of the archive. Residual leakage is unavoidable and stated plainly: the rule is a deterministic function of measured physics, so a model given semi-major axis and stellar luminosity can always rebuild the insolation criterion.
+- **Platt (sigmoid) calibration by default.** Isotonic regression fits a step function that, with this few positives, collapses 6,360 planets into ~137 distinct scores — tying the whole top of the ranked list. Sigmoid keeps 6,300+ distinct scores at an equal or better Brier score.
+- **Prediction intervals on the calibrated scale**, derived from the per-fold calibrated classifiers rather than the raw base learners (mixing those scales pins every upper bound to 1.0).
+- **SHAP attribution** per prediction, plus importance grouped by data family.
 
-## 🛠️ Technology Stack
+### 4. Tiered specialist computer vision
 
-| Domain | Technology | Purpose |
+- **Tier 1 — classical CV pre-filter**: Canny edge density, local Shannon entropy, and colour variance reject featureless or no-data tiles before any deep model runs.
+- **Tier 2 — specialist YOLO stack**: one detector per geomorphological proxy class — `sedimentary_layering`, `mineral_water_interaction`, `erosion_morphology` — with bounding-box overlays and per-class confidences.
+- Runs in **clearly-labelled simulation mode** when no trained weights are present, so the pipeline is demonstrable without pretending to evidential weight.
+
+### 5. HBLI fusion with adaptive weighting
+
+$$\text{HBLI} = w_{tab} \cdot S_{tab} + w_{vis} \cdot S_{vis}$$
+
+Weights **renormalise over the streams that actually ran**. A tabular-only analysis previously capped at 0.55 no matter how Earth-like the planet — an unanalyzed stream was scored as zero, which reads as evidence *against* habitability rather than absence of evidence. A stream that ran and found nothing still counts against the score; a stream that never ran does not.
+
+Bootstrap confidence intervals propagate component uncertainty, and the qualitative triage bands are:
+
+| Band | Score | Meaning |
 |---|---|---|
-| **Language** | Python 3.10+ | Core language runtime |
-| **Machine Learning** | `scikit-learn` (v1.4+) | Random Forest, Isotonic calibration, cross-validation |
-| **Gradient Boosting** | `xgboost` (v2.0+) | High-performance tabular habitability classification |
-| **Computer Vision** | `ultralytics` (YOLO) | Specialist object detection on surface imagery |
-| **Image Processing** | `opencv-python`, `scikit-image` | Classical CV filtering (entropy, edge density, Sobel) |
-| **Explainable AI** | `shap` (v0.44+) | TreeExplainer feature attributions & risk factors |
-| **Astrophysics APIs** | `astroquery`, `requests` | NASA Exoplanet Archive TAP service & MAST queries |
-| **Data Processing** | `pandas`, `numpy`, `scipy` | Feature engineering, numerical math, matrix ops |
-| **Interactive UI** | `streamlit` (v1.38+) | Web dashboard with glassmorphism styling |
-| **Visualizations** | `plotly`, `matplotlib`, `seaborn` | 3D orbital orbits, radar charts, scatter plots |
-| **Testing** | `pytest`, `pytest-cov` | 46-test unit and integration test suite |
-| **Configuration** | `PyYAML` | Centralized parameter management in YAML |
+| **High Likelihood** | ≥ 0.75 | Prime target for follow-up spectroscopy |
+| **Moderate Likelihood** | 0.50 – 0.74 | Favourable environment, partial proxy support |
+| **Low Likelihood** | 0.25 – 0.49 | Extreme conditions or ambiguous proxies |
+| **Very Low Likelihood** | < 0.25 | Hostile flux or barren surface |
+
+### 6. Streamlit dashboard
+
+- **Target Analysis** — score any planet, with SHAP attribution, a Kopparapu habitable-zone diagram, an Earth-similarity radar, and the planet's position in the population.
+- **Catalog Explorer** — configurable population scatter, model-ranked target shortlist with CSV export, discovery history by method and facility, correlation matrix, and the raw NASA table.
+- **Model Lab** — train, evaluate, and inspect: held-out metrics, a reliability diagram, feature importance by data family, and an explicit account of what the metrics do and do not mean.
+- **Surface Imagery** — upload imagery and run tiling → pre-filter → detection → fused score.
 
 ---
 
-## 📂 Project Structure
+## 📂 Project structure
 
 ```text
-Planetary Biosignature/
+Planetary_Biosignature/
 ├── app/
-│   └── streamlit_app.py          # Interactive web UI (3 analysis modes)
+│   ├── streamlit_app.py          # Dashboard entry point and page layout
+│   ├── theme.py                  # Design tokens, stylesheet, UI primitives
+│   ├── charts.py                 # Plotly figure builders
+│   ├── state.py                  # Data loading, caching, provenance banner
+│   └── views/
+│       ├── model_lab.py          # Train / evaluate / inspect
+│       └── image_analysis.py     # Vision pipeline view
 ├── config/
-│   └── default_config.yaml       # Master configuration (paths, thresholds, model params)
-├── data/                         # Local data cache (auto-generated, git-ignored)
-│   ├── catalogs/                 # Downloaded NASA Exoplanet Archive tables
-│   ├── exoplanets_bulk/          # High-volume multi-modal datasets (10GB - 30GB+)
-│   ├── raw/                      # Raw imagery and downloads
-│   └── tabular/                  # Engineered exoplanet CSVs
+│   └── default_config.yaml       # Columns, thresholds, model and label rules
+├── data/tabular/                 # Cached NASA table + .meta.json manifest
 ├── docs/
-│   └── parameter_rationale.md    # Scientific justification for all physical parameters
-├── models/                       # Serialized trained model weights (.joblib, .pt)
-├── reports/                      # Evaluation figures, calibration plots, metrics
+│   └── parameter_rationale.md    # Scientific justification for parameters
+├── models/                       # Serialized weights (.joblib, .pt)
 ├── src/
-│   ├── data_ingestion/           # NASA TAP, PDS, ISRO Bhoonidhi, and image tiling
-│   │   ├── exoplanet_archive.py  # Exoplanet Archive client with TAP API
-│   │   ├── pds_client.py         # NASA Planetary Data System imagery client
+│   ├── data_ingestion/
+│   │   ├── exoplanet_archive.py  # NASA TAP client, provenance, validation
+│   │   ├── pds_client.py         # NASA PDS imagery client
 │   │   ├── bhoonidhi_client.py   # ISRO Bhoonidhi analog data client
-│   │   └── tiling.py             # High-res gigapixel image tiler
-│   ├── preprocessing/            # Feature engineering & CV pre-filtering
-│   │   ├── feature_engineering.py# ESI, HZ boundaries, tidal locking features
-│   │   └── cv_filter.py          # Classical edge/entropy pre-filtering
-│   ├── models/                   # ML models and fusion engine
-│   │   ├── tabular_model.py      # XGBoost / Random Forest habitability model
-│   │   ├── vision_detector.py    # YOLO specialist detector stack
-│   │   └── fusion.py             # HBLI composite scoring & bootstrap CI
-│   ├── evaluation/               # Model calibration & negative controls
-│   │   ├── calibration.py        # Reliability diagrams & Brier scoring
-│   │   └── negative_controls.py  # Abiotic and noise negative control tests
-│   └── utils/                    # Shared logging, config, and utilities
-├── tests/                        # Full test suite (46 passing tests)
-│   ├── test_data_ingestion.py    # Tests for TAP, PDS, Bhoonidhi, and tiling
-│   ├── test_preprocessing.py     # Tests for ESI, feature engineering, CV filter
-│   ├── test_models.py            # Tests for tabular, vision, and fusion layers
-│   └── test_fusion.py            # Tests for calibration and negative controls
-├── tools/                        # Operational CLI tools
-│   ├── fetch_exoplanet_data.py   # Interactive bulk ingestion engine (10GB - 30GB+)
-│   └── label_pipeline.py         # Image slicing & YOLO labeling pipeline
-├── planetary-biosignature-project-plan.md # Original scientific specification
-├── requirements.txt              # Production dependencies
-├── setup.py                      # Package installation config
-└── README.md                     # Documentation
+│   │   └── tiling.py             # High-res image tiler
+│   ├── preprocessing/
+│   │   ├── feature_engineering.py# ESI, Kopparapu HZ, derived physics, encoding
+│   │   └── classical_cv_filter.py# Edge/entropy/variance pre-filter
+│   ├── models/
+│   │   ├── tabular_model.py      # Calibrated XGBoost / RF + SHAP
+│   │   ├── vision_detector.py    # YOLO specialist stack
+│   │   └── fusion.py             # HBLI composite scoring
+│   ├── evaluation/               # Calibration and negative controls
+│   └── utils/                    # Config and logging
+├── tests/                        # 71 unit and integration tests
+├── tools/
+│   ├── fetch_exoplanet_data.py   # Bulk multi-modal ingestion CLI
+│   └── label_pipeline.py         # Image slicing & YOLO labeling
+├── requirements.txt              # Runtime dependencies
+└── requirements-optional.txt     # astroquery, labelImg, onnxruntime
 ```
 
 ---
 
-## ⚡ Installation & Getting Started
+## ⚡ Installation
 
-### 1. Prerequisites
-- Python 3.10, 3.11, or 3.12
-- Git
+```bash
+git clone https://github.com/nishikadhankhar/Planetary_Biosignature.git
+cd Planetary_Biosignature
 
-### 2. Clone and Setup Environment
-```powershell
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/Planetary_Biosignature.git
-cd "Planetary Biosignature"
+python -m venv .venv
+source .venv/bin/activate        # Linux/macOS
+# .\.venv\Scripts\Activate       # Windows
 
-# Create and activate virtual environment
-python -m venv venv
-.\venv\Scripts\Activate       # Windows
-# source venv/bin/activate    # Linux/macOS
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
----
+On macOS, XGBoost needs the OpenMP runtime. Without it ExoScope logs a warning and falls back to Random Forest:
 
-## 🖥️ Usage Guide
-
-### 1. Launch the Streamlit Web Application
-```powershell
-streamlit run app\streamlit_app.py
-```
-Open **http://localhost:8501** in your browser to access the full ExoScope dashboard.
-
----
-
-### 2. Bulk Exoplanet Data Ingestion (Interactive 500 MB – 30 GB+)
-To download and assemble exoplanet catalogs, photometric transit time-series, transmission spectra, and surface analog imagery:
-
-```powershell
-# Interactive mode: prompts for size, folder, and data composition
-python tools\fetch_exoplanet_data.py
-```
-
-Or pass command-line arguments directly:
-```powershell
-# Ingest 10 GB of multi-modal data
-python tools\fetch_exoplanet_data.py --size 10GB --output data/exoplanets_bulk
-
-# Ingest 20 GB of light curves & spectra
-python tools\fetch_exoplanet_data.py --size 20GB --mode all --yes
+```bash
+brew install libomp
 ```
 
 ---
 
-### 3. Fetch Standard Exoplanet Catalog
-To download or refresh the base NASA Exoplanet Archive composite table:
-```powershell
-python -m src.data_ingestion.exoplanet_archive
+## 🖥️ Usage
+
+### Launch the dashboard
+
+```bash
+streamlit run app/streamlit_app.py
 ```
 
----
+Then open **http://localhost:8501**. The catalog loads automatically on first run.
 
-### 4. Train the Tabular Habitability Model
-Train the calibrated XGBoost/Random Forest model with 5-fold cross-validation:
-```powershell
+### Fetch the NASA catalog from the command line
+
+```bash
+python -m src.data_ingestion.exoplanet_archive --refresh
+```
+
+Useful flags: `--max-rows N` to cap the download, `--output PATH` to choose a cache location, `--allow-synthetic` to generate development data when the archive is unreachable.
+
+### Train the habitability model
+
+```bash
 python -m src.models.tabular_model
 ```
 
----
+Prints cross-validation and held-out metrics, feature importances, and the top-ranked candidate planets.
 
-### 5. Run the Test Suite
-Verify that all 46 unit and integration tests pass:
-```powershell
-python -m pytest tests\ -v
+### Inspect the engineered features
+
+```bash
+python -m src.preprocessing.feature_engineering
+```
+
+### Run the test suite
+
+```bash
+python -m pytest tests/ -v
 ```
 
 ---
 
-## 🔬 Astrobiology Grounding & References
+## 🔬 Scientific grounding
 
-ExoScope builds upon established research in planetary science and astrobiology:
+1. **Habitable zone boundaries** — *Kopparapu et al. (2013, 2014)*: effective stellar flux limits for surface liquid water, valid for 2600–7200 K hosts. ExoScope extrapolates up to 300 K beyond that range and flags any row where it does — TRAPPIST-1 sits at 2566 K, and discarding it would wrongly place TRAPPIST-1 e/f/g outside the habitable zone.
+2. **Earth Similarity Index** — *Schulze-Makuch et al. (2011)*: physical metric scalings for radius, density, escape velocity and temperature.
+3. **Radius valley** — *Fulton et al. (2017)*: the ~1.8 R⊕ gap above which planets retain H/He envelopes, used as the conservative rocky-planet ceiling.
+4. **Mass-radius relation** — *Chen & Kipping (2017)*, used for the composition residual feature.
+5. **SETI Institute / NASA Ames — Salar de Pajonales** (*Cabrol, Warren-Rhodes, Kalaitzis et al.*): machine learning on terrestrial Mars-analog sites raises biosignature-proxy detection rates over random search.
+6. **NASA Exoplanet Archive** — the `pscomppars` composite parameters table.
 
-1. **SETI Institute / NASA Ames — Salar de Pajonales Study** (*Cabrol, Warren-Rhodes, Kalaitzis et al.*): Demonstrating that machine learning trained on terrestrial Mars-analog sites dramatically increases biosignature-proxy detection rates over random search.
-2. **Earth Similarity Index (ESI)** (*Schulze-Makuch et al., 2011*): Formulation of physical metric scalings for planetary radius, density, escape velocity, and temperature.
-3. **Habitable Zone Insolation Limits** (*Kopparapu et al., 2013, 2014*): Analytical solar flux boundary conditions for rocky planet surface liquid water.
-4. **Neural-Network Biosignature Detection in Rock Imagery** (*Corenblit et al., 2023, Astrobiology Journal*): Deep learning applied to macro- and micro-scale morphological texture in rocky substrates.
-5. **NASA Planetary Data System (PDS)** & **NASA Exoplanet Archive**: Public astronomical archives enabling reproducible astrophysical research.
+Sanity check: on the current catalog the pipeline places **177 planets in the conservative habitable zone** and **283 in the optimistic zone**, tracking the Planetary Habitability Laboratory catalogs, and independently reproduces the accepted result that TRAPPIST-1 e, f and g fall inside the conservative zone.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
