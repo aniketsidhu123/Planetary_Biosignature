@@ -107,11 +107,11 @@ class TestTabularModel:
         col_info = get_feature_columns(df)
         feature_cols = col_info["all_features"]
 
-        # Train and save
+        # Train and save (auto-saves to models/tabular_habitability.joblib)
         model = TabularHabitabilityModel(model_type="xgboost")
         model.train(df, feature_cols)
 
-        save_path = "models/test_model.joblib"
+        save_path = "models/tabular_habitability.joblib"
 
         # Load into new instance
         model2 = TabularHabitabilityModel()

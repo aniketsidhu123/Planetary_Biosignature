@@ -272,6 +272,26 @@ def _generate_synthetic_data(columns: List[str], n_samples: int = 500) -> pd.Dat
         mask = rng.random(n_samples) < 0.10
         df.loc[mask, col] = np.nan
 
+    # ── Guarantee a fraction of habitable planets ──────────────
+    # Overwrite ~15% of samples with Earth-like parameters so that
+    # downstream labelling (pl_rade ∈ [0.5, 2.5] & pl_eqt ∈ [180, 310])
+    # always produces both classes regardless of sample size.
+    n_habitable = max(int(n_samples * 0.15), 3)
+    hab_idx = df.index[:n_habitable]
+
+    if "pl_rade" in df.columns:
+        df.loc[hab_idx, "pl_rade"] = rng.uniform(0.8, 1.8, n_habitable)
+    if "pl_eqt" in df.columns:
+        df.loc[hab_idx, "pl_eqt"] = rng.uniform(200, 290, n_habitable)
+    if "pl_bmasse" in df.columns:
+        df.loc[hab_idx, "pl_bmasse"] = rng.uniform(0.5, 5.0, n_habitable)
+    if "pl_dens" in df.columns:
+        df.loc[hab_idx, "pl_dens"] = rng.uniform(3.5, 7.0, n_habitable)
+    if "pl_orbsmax" in df.columns:
+        df.loc[hab_idx, "pl_orbsmax"] = rng.uniform(0.7, 1.5, n_habitable)
+    if "pl_insol" in df.columns:
+        df.loc[hab_idx, "pl_insol"] = rng.uniform(0.3, 2.0, n_habitable)
+
     return df
 
 

@@ -286,10 +286,10 @@ class VisionDetectorStack:
                 # Filter for roughly horizontal lines
                 horizontal_lines = []
                 for line in lines:
-                    x1, y1, x2, y2 = line[0]
+                    x1, y1, x2, y2 = line.ravel()
                     angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
                     if angle < 25 or angle > 155:  # Near-horizontal
-                        horizontal_lines.append(line[0])
+                        horizontal_lines.append(line.ravel())
 
                 if len(horizontal_lines) >= 3:
                     # Multiple parallel horizontal lines = layering signal
